@@ -8,7 +8,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Calendar, Users, AlertCircle, CheckCircle, 
-  Clock, ShieldAlert, UserCheck, Coffee, Sun, Moon, Link
+  Clock, ShieldAlert, UserCheck, Coffee, Sun, Moon, Link, Download
 } from 'lucide-react';
 
 // ==========================================
@@ -154,6 +154,43 @@ export default function App() {
     } catch(e) {
         showToast("複製失敗，請手動複製", "error");
     }
+  };
+
+  // ★ 新增功能：匯出成 Excel (CSV)
+  const exportToExcel = () => {
+    if (!scheduleData || scheduleData.length === 0) {
+      showToast("沒有更表資料可匯出", "error");
+      return;
+    }
+
+    // 加入 \uFEFF 是為了讓 Excel 正確識別 UTF-8 編碼，防止中文字變亂碼
+    let csvContent = "\uFEFF"; 
+    csvContent += "日期,早更 (AM),夜更 (PM),放假 (OFF)\n";
+
+    scheduleData.forEach((day, index) => {
+      const dateStr = getDisplayDate(index);
+      
+      // 將員工 ID 轉為名字，並用「、」連接
+      const amStr = day.AM.map(id => getEmpName(id)).join('、');
+      const pmStr = day.PM.map(id => getEmpName(id)).join('、');
+      const offStr = day.OFF.map(id => getEmpName(id)).join('、');
+
+      // 加上雙引號，避免名字中有逗號影響 CSV 格式
+      csvContent += `"${dateStr}","${amStr}","${pmStr}","${offStr}"\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    // 建立一個隱藏的 <a> 標籤觸發下載
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `排更表_${SCHEDULE_START_DATE}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showToast("成功匯出更表！");
   };
 
   const workerStats = useMemo(() => {
@@ -346,13 +383,24 @@ export default function App() {
           )}
         </div>
 
-        {/* 主管專屬：派發連結區域 (只在主管模式顯示) */}
+        {/* 主管專屬：派發連結與匯出 (只在主管模式顯示) */}
         {viewMode === 'supervisor' && !isUrlLocked && (
           <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100 rounded-xl p-4 sm:p-5 mb-6 shadow-sm">
-             <div className="flex items-center gap-2 mb-3">
-               <Link size={20} className="text-purple-600" />
-               <h3 className="font-bold text-purple-900 text-sm sm:text-base">一鍵派發專屬連結</h3>
+             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-3">
+               <div className="flex items-center gap-2">
+                 <Link size={20} className="text-purple-600" />
+                 <h3 className="font-bold text-purple-900 text-sm sm:text-base">專屬連結及報表匯出</h3>
+               </div>
+               
+               {/* 下載 Excel (CSV) 按鈕 */}
+               <button 
+                  onClick={exportToExcel}
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white py-2 sm:py-1.5 px-4 sm:px-3 rounded-lg text-sm font-medium transition-colors shadow-sm"
+               >
+                 <Download size={16} /> 匯出更表 (Excel/CSV)
+               </button>
              </div>
+             
              <p className="text-xs sm:text-sm text-purple-700 mb-4">點擊以下按鈕複製專屬網址，透過 WhatsApp 傳送給同事。他們點擊後將會自動鎖定身分，無法切換或偷看主管頁面。</p>
              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                {EMPLOYEES.map(emp => (
