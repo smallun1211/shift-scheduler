@@ -252,6 +252,37 @@ export default function App() {
 
   const getEmpName = (id) => EMPLOYEES.find(e => e.id === id)?.name || id;
 
+  // 安全複製連結功能 (解決 iframe 環境 Clipboard API 被擋的問題)
+  const handleCopyLink = (emp) => {
+    const baseUrl = window.location.origin + window.location.pathname;
+    const shareLink = `${baseUrl}?uid=${emp.id}`;
+    
+    // 使用 document.execCommand 作為可靠的降級方案
+    const textArea = document.createElement("textarea");
+    textArea.value = shareLink;
+    // 防止滾動
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        showToast(`已複製 ${emp.name} 的專屬連結！`, 'success');
+      } else {
+        showToast('複製失敗，請手動選取複製', 'error');
+      }
+    } catch (err) {
+      console.error('Copy fallback failed', err);
+      showToast('複製失敗，請手動選取複製', 'error');
+    }
+    
+    document.body.removeChild(textArea);
+  };
+
   // ==========================================
   // ★ 動態日期轉換 (加入本地時區解析保護)
   // ==========================================
@@ -506,15 +537,10 @@ export default function App() {
                     </p>
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                         {EMPLOYEES.map(emp => {
-                            const baseUrl = window.location.origin + window.location.pathname;
-                            const shareLink = `${baseUrl}?uid=${emp.id}`;
                             return (
                                 <button 
                                     key={`link-${emp.id}`}
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(shareLink);
-                                        showToast(`已複製 ${emp.name} 的專屬連結！`, 'info');
-                                    }}
+                                    onClick={() => handleCopyLink(emp)}
                                     className="text-left text-xs bg-white border border-purple-100 hover:border-purple-300 hover:bg-purple-50 p-2 rounded transition-colors"
                                 >
                                     <span className="block font-bold text-purple-700">{emp.name}</span>
