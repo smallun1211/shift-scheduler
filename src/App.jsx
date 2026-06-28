@@ -21,7 +21,20 @@ import {
 // ==========================================
 // 1. Firebase 初始化與環境設置
 // ==========================================
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+// ★ 修復：加入真實金鑰作為 Vercel 真實環境的後備設定，防止崩潰
+const fallbackConfig = {
+  apiKey: "AIzaSyAzpCd6l3gWkQ92u2tyQCucO7IAYsqX4gw",
+  authDomain: "vcc-shift-schedule.firebaseapp.com",
+  projectId: "vcc-shift-schedule",
+  storageBucket: "vcc-shift-schedule.firebasestorage.app",
+  messagingSenderId: "278697903697",
+  appId: "1:278697903697:web:24851b0ff640f3a37c5a70"
+};
+
+const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config
+  ? JSON.parse(__firebase_config) 
+  : fallbackConfig;
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
