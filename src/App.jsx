@@ -21,15 +21,7 @@ import {
 // ==========================================
 // 1. Firebase 初始化與環境設置
 // ==========================================
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config)
-	 : {
-	apiKey: "AIzaSyAzpCd6l3gWkQ92u2tyQCucO7IAYsqX4gw",
-      	authDomain: "vcc-shift-schedule.firebaseapp.com",
-      	projectId: "vcc-shift-schedule",
-      	storageBucket: "vcc-shift-schedule.firebasestorage.app",
-      	messagingSenderId: "278697903697",
-      	appId: "1:278697903697:web:24851b0ff640f3a37c5a70"
-	};
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -387,20 +379,29 @@ export default function App() {
           </div>
           
           <div className="flex flex-col gap-3 w-full md:w-auto">
-            <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-lg border border-slate-200">
-                <button 
-                    onClick={() => setViewMode('employee')}
-                    className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${viewMode === 'employee' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                    同事選更模式
-                </button>
-                <button 
-                    onClick={() => setViewMode('supervisor')}
-                    className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${viewMode === 'supervisor' ? 'bg-white shadow text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                    主管全局檢視
-                </button>
-            </div>
+            {/* 根據是否為專屬登入，決定是否顯示主管切換按鈕 */}
+            {!isLockedIdentity ? (
+              <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-lg border border-slate-200">
+                  <button 
+                      onClick={() => setViewMode('employee')}
+                      className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${viewMode === 'employee' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                      同事選更模式
+                  </button>
+                  <button 
+                      onClick={() => setViewMode('supervisor')}
+                      className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${viewMode === 'supervisor' ? 'bg-white shadow text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                      主管全局檢視
+                  </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-lg border border-slate-200">
+                  <div className="px-4 py-2 rounded-md text-sm font-bold bg-white shadow text-blue-600">
+                      同事選更模式
+                  </div>
+              </div>
+            )}
 
             {viewMode === 'employee' && (
                 <div className="flex items-center gap-2 justify-end">
