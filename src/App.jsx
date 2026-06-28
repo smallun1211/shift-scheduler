@@ -45,15 +45,15 @@ const PERIOD_ID = `period_${SCHEDULE_START_DATE}`;
 // 真實員工資料 (已更新為最新名字)
 const EMPLOYEES = [
   { id: 'emp_1', name: 'KCKB' },
-  { id: 'emp_2', name: 'Leo' },
-  { id: 'emp_3', name: 'Ricky' },
-  { id: 'emp_4', name: 'Heyman' },
-  { id: 'emp_5', name: 'Perlin' },
-  { id: 'emp_6', name: 'Paco' },
-  { id: 'emp_7', name: 'Ryan' },
-  { id: 'emp_8', name: 'Vincent' },
-  { id: 'emp_9', name: 'Wai' },
-  { id: 'emp_10', name: 'Hugo' }
+  { id: 'emp_2', name: 'KFW' },
+  { id: 'emp_3', name: 'CCKR' },
+  { id: 'emp_4', name: 'HMC' },
+  { id: 'emp_5', name: 'PL' },
+  { id: 'emp_6', name: 'CPY' },
+  { id: 'emp_7', name: 'RH' },
+  { id: 'emp_8', name: 'FHW' },
+  { id: 'emp_9', name: 'CTW' },
+  { id: 'emp_10', name: 'LHF' }
 ];
 
 // 生成 14 天空白更表結構
