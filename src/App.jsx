@@ -38,7 +38,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_co
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-shift-app';
+const appId = 'default-shift-app';
 
 // ==========================================
 // 🔧 系統核心設定 (每次開新更表只需修改這裡！)
