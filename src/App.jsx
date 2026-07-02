@@ -19,6 +19,13 @@ import {
 } from 'lucide-react';
 
 // ==========================================
+// 🔧 系統核心設定 (每次開新更表只需修改這裡！)
+// ==========================================
+const SCHEDULE_START_DATE = '2026-07-06'; // 格式: YYYY-MM-DD
+// ★ 補回動態 PERIOD_ID：每次改上面的日期，就會自動在雲端開一個新的空白更表！
+const PERIOD_ID = 'current_period'; 
+
+// ==========================================
 // 1. Firebase 初始化與環境設置
 // ==========================================
 // ★ 修復：加入真實金鑰作為 Vercel 真實環境的後備設定，防止崩潰
@@ -40,12 +47,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'default-shift-app';
 
-// ==========================================
-// 🔧 系統核心設定 (每次開新更表只需修改這裡！)
-// ==========================================
-const SCHEDULE_START_DATE = '2026-07-06'; // 格式: YYYY-MM-DD
-// ★ 補回動態 PERIOD_ID：每次改上面的日期，就會自動在雲端開一個新的空白更表！
-const PERIOD_ID = 'current_period'; 
+
 
 // 真實員工資料 (已更新為最新名字)
 const EMPLOYEES = [
