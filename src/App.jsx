@@ -45,7 +45,7 @@ const appId = 'default-shift-app';
 // ==========================================
 const SCHEDULE_START_DATE = '2026-07-06'; // 格式: YYYY-MM-DD
 // ★ 補回動態 PERIOD_ID：每次改上面的日期，就會自動在雲端開一個新的空白更表！
-const PERIOD_ID = `period_${SCHEDULE_START_DATE}`; 
+const PERIOD_ID = 'current_period'; 
 
 // 真實員工資料 (已更新為最新名字)
 const EMPLOYEES = [
