@@ -15,20 +15,12 @@ import {
 } from 'firebase/firestore';
 import { 
   Calendar, Users, AlertCircle, CheckCircle, 
-  Clock, ShieldAlert, UserCheck, Coffee, Sun, Moon, Link, Lock, Unlock 
+  Clock, ShieldAlert, UserCheck, Coffee, Sun, Moon, Link, Lock, Unlock, Download 
 } from 'lucide-react';
-
-// ==========================================
-// 🔧 系統核心設定 (每次開新更表只需修改這裡！)
-// ==========================================
-const SCHEDULE_START_DATE = '2026-07-06'; // 格式: YYYY-MM-DD
-// ★ 補回動態 PERIOD_ID：每次改上面的日期，就會自動在雲端開一個新的空白更表！
-const PERIOD_ID = 'current_period'; 
 
 // ==========================================
 // 1. Firebase 初始化與環境設置
 // ==========================================
-// ★ 修復：加入真實金鑰作為 Vercel 真實環境的後備設定，防止崩潰
 const fallbackConfig = {
   apiKey: "AIzaSyAzpCd6l3gWkQ92u2tyQCucO7IAYsqX4gw",
   authDomain: "vcc-shift-schedule.firebaseapp.com",
@@ -45,11 +37,16 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_co
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'default-shift-app';
 
+// ⚠️ 智能環境切換：在預覽畫面使用系統動態 ID 防止權限錯誤；在 Vercel 真正上線時則自動鎖定為 'default-shift-app' 以讀取真實數據
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-shift-app';
 
+// ==========================================
+// 🔧 系統核心設定 (每次開新更表只需修改這裡！)
+// ==========================================
+const SCHEDULE_START_DATE = '2026-07-20'; // 格式: YYYY-MM-DD
+const PERIOD_ID = `period_${SCHEDULE_START_DATE}`; 
 
-// 真實員工資料 (已更新為最新名字)
 const EMPLOYEES = [
   { id: 'emp_1', name: 'KCKB' },
   { id: 'emp_2', name: 'KFW' },
@@ -63,38 +60,32 @@ const EMPLOYEES = [
   { id: 'emp_10', name: 'LHF' }
 ];
 
-// 生成 14 天空白更表結構
 const generateEmptySchedule = () => {
   return Array.from({ length: 14 }, (_, i) => ({
-    dayId: i + 1,
-    AM: [],
-    PM: [],
-    OFF: []
+    dayId: i + 1, AM: [], PM: [], OFF: []
   }));
 };
 
 export default function App() {
-  // 讀取網址參數 (例如: ?uid=emp_1)
   const urlParams = new URLSearchParams(window.location.search);
   const uidFromUrl = urlParams.get('uid');
   const validEmp = EMPLOYEES.find(e => e.id === uidFromUrl);
 
   const [user, setUser] = useState(null);
   const [scheduleData, setScheduleData] = useState(null);
-  const [isScheduleLocked, setIsScheduleLocked] = useState(false); // 更表鎖定狀態
+  const [isScheduleLocked, setIsScheduleLocked] = useState(false); 
   const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState(null); // ★ 新增：資料庫錯誤狀態
   
-  // UI 狀態
-  const [currentUser, setCurrentUser] = useState(validEmp ? validEmp.id : EMPLOYEES[0].id); // 若有專屬連結則自動鎖定身分
-  const [isLockedIdentity] = useState(!!validEmp); // 判斷是否使用專屬連結進入
-  const [viewMode, setViewMode] = useState(validEmp ? 'employee' : 'supervisor'); // 'employee' 或 'supervisor'
+  const [currentUser, setCurrentUser] = useState(validEmp ? validEmp.id : EMPLOYEES[0].id); 
+  const [isLockedIdentity] = useState(!!validEmp); 
+  const [viewMode, setViewMode] = useState(validEmp ? 'employee' : 'supervisor'); 
   const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
-  const [processing, setProcessing] = useState(false); // 防止連點
+  const [processing, setProcessing] = useState(false); 
 
   // ==========================================
-  // 2. 身份驗證與資料訂閱 (Firebase Hooks)
+  // 2. 身份驗證與資料訂閱
   // ==========================================
-  
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -105,7 +96,8 @@ export default function App() {
         }
       } catch (err) {
         console.error("Auth Error:", err);
-        showToast("登入系統失敗，請重試", "error");
+        setDbError("系統登入失敗，請檢查網絡連線。");
+        setLoading(false);
       }
     };
     initAuth();
@@ -116,11 +108,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 訂閱雲端更表資料
   useEffect(() => {
     if (!user) return;
 
-    // ★ 使用動態 PERIOD_ID 去找對應的資料夾
     const scheduleRef = doc(db, 'artifacts', appId, 'public', 'data', 'schedules', PERIOD_ID);
 
     const unsubscribe = onSnapshot(scheduleRef, 
@@ -128,18 +118,23 @@ export default function App() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           setScheduleData(data.days);
-          setIsScheduleLocked(!!data.isLocked); // 同步雲端的鎖定狀態
+          setIsScheduleLocked(!!data.isLocked); 
         } else {
-          // 如果是全新的一期更表，建立空白更表
           const emptySchedule = generateEmptySchedule();
           setScheduleData(emptySchedule);
           setDoc(scheduleRef, { days: emptySchedule, isLocked: false });
         }
+        setDbError(null); // 成功讀取，清除錯誤
         setLoading(false);
       },
       (error) => {
         console.error("Firestore Subscribe Error:", error);
-        showToast("無法讀取更表資料，請檢查網絡", "error");
+        // ★ 攔截權限錯誤並顯示畫面，避免白屏
+        if (error.code === 'permission-denied') {
+            setDbError("Firebase 權限不足或過期 (Permission Denied)。請主管登入 Firebase Console 更新 Firestore Rules。");
+        } else {
+            setDbError(`無法讀取更表資料 (${error.message})`);
+        }
         setLoading(false);
       }
     );
@@ -147,20 +142,17 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-
   // ==========================================
-  // 3. 商業邏輯與即時交易更新
+  // 3. 商業邏輯
   // ==========================================
-
   const showToast = (msg, type = 'info') => {
     setToast({ show: true, msg, type });
     setTimeout(() => setToast({ show: false, msg: '', type: 'info' }), 3000);
   };
 
-  // 動態獲取每更的容量上限 (第 6, 7, 13, 14 日夜更只限 3 人)
+  // 動態獲取每更的容量上限 (所有夜更只限 3 人)
   const getShiftCapacity = (dayIndex, shiftType) => {
-    const reducedCapacityDays = [5, 6, 12, 13]; 
-    if (shiftType === 'PM' && reducedCapacityDays.includes(dayIndex)) {
+    if (shiftType === 'PM') {
       return 3; 
     }
     return 4; 
@@ -178,7 +170,6 @@ export default function App() {
     return { workDays, offDays };
   }, [scheduleData, currentUser]);
 
-  // 主管操作：鎖定 / 解鎖 更表
   const toggleScheduleLock = async (lockStatus) => {
     if (processing) return;
     setProcessing(true);
@@ -198,7 +189,6 @@ export default function App() {
     }
   };
 
-  // 處理點擊更表 (Transaction)
   const handleShiftClick = async (dayIndex, shiftType) => {
     if (viewMode === 'supervisor' || processing || !scheduleData) return;
     
@@ -267,15 +257,12 @@ export default function App() {
 
   const getEmpName = (id) => EMPLOYEES.find(e => e.id === id)?.name || id;
 
-  // 安全複製連結功能 (解決 iframe 環境 Clipboard API 被擋的問題)
   const handleCopyLink = (emp) => {
     const baseUrl = window.location.origin + window.location.pathname;
     const shareLink = `${baseUrl}?uid=${emp.id}`;
     
-    // 使用 document.execCommand 作為可靠的降級方案
     const textArea = document.createElement("textarea");
     textArea.value = shareLink;
-    // 防止滾動
     textArea.style.top = "0";
     textArea.style.left = "0";
     textArea.style.position = "fixed";
@@ -294,13 +281,9 @@ export default function App() {
       console.error('Copy fallback failed', err);
       showToast('複製失敗，請手動選取複製', 'error');
     }
-    
     document.body.removeChild(textArea);
   };
 
-  // ==========================================
-  // ★ 動態日期轉換 (加入本地時區解析保護)
-  // ==========================================
   const getDisplayDate = (dayOffset) => {
     const date = new Date(SCHEDULE_START_DATE.replace(/-/g, '/'));
     date.setDate(date.getDate() + dayOffset);
@@ -308,10 +291,36 @@ export default function App() {
     return `${date.getMonth() + 1}月${date.getDate()}日 (${weekdays[date.getDay()]})`;
   };
 
+  // ★ 匯出 Excel (CSV) 功能
+  const exportToExcel = () => {
+    if (!scheduleData) return;
+
+    let csvContent = "\uFEFF"; // 加入 BOM 確保 Excel 能正確顯示中文
+    csvContent += "日期,早更 (AM),夜更 (PM),放假 (OFF)\n";
+
+    scheduleData.forEach((dayData, index) => {
+      const dateStr = getDisplayDate(index);
+      const amNames = dayData.AM.map(getEmpName).join(" / ");
+      const pmNames = dayData.PM.map(getEmpName).join(" / ");
+      const offNames = dayData.OFF.map(getEmpName).join(" / ");
+      csvContent += `"${dateStr}","${amNames}","${pmNames}","${offNames}"\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `更表_${SCHEDULE_START_DATE}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showToast("已成功下載更表檔案", "success");
+  };
+
   // ==========================================
   // 4. UI 渲染組件
   // ==========================================
-
   const renderShiftButton = (dayIndex, shiftType, config) => {
     const dayData = scheduleData[dayIndex];
     if (!dayData) return null;
@@ -381,10 +390,33 @@ export default function App() {
     );
   };
 
+  // ★ 錯誤攔截 UI：如果資料庫連線失敗，顯示紅色警告畫面
+  if (dbError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
+        <div className="bg-white p-8 rounded-2xl shadow-lg border border-red-100 max-w-md w-full flex flex-col items-center">
+          <ShieldAlert size={64} className="text-red-500 mb-6" />
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">系統連線中斷</h2>
+          <p className="text-red-600 font-medium mb-6 bg-red-50 p-3 rounded-lg w-full">{dbError}</p>
+          <div className="text-left text-sm text-slate-600 space-y-2 w-full">
+            <p><strong>解決方法 (主管專用)：</strong></p>
+            <ol className="list-decimal pl-5 space-y-1">
+              <li>登入 Firebase Console。</li>
+              <li>進入 Firestore Database &gt; Rules (規則)。</li>
+              <li>將規則更新為 <code>allow read, write: if request.auth != null;</code>。</li>
+              <li>點擊發佈，然後重新整理此網頁。</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+        <p className="text-gray-500 font-medium">系統連接中，請稍候...</p>
       </div>
     );
   }
@@ -425,7 +457,6 @@ export default function App() {
           </div>
           
           <div className="flex flex-col gap-3 w-full md:w-auto">
-            {/* 根據是否為專屬登入，決定是否顯示主管切換按鈕 */}
             {!isLockedIdentity ? (
               <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-lg border border-slate-200">
                   <button 
@@ -524,11 +555,18 @@ export default function App() {
                         </div>
                         <div>
                             <p className="text-lg font-bold text-purple-900 mb-1">主管全局視角與控制</p>
-                            <p className="text-sm text-purple-700">紅色區塊表示該時段 <span className="font-bold underline">未達最低 3 人要求</span>。第 6, 7, 13, 14 日之夜更上限已設定為 3 人。</p>
+                            <p className="text-sm text-purple-700">紅色區塊表示該時段 <span className="font-bold underline">未達最低 3 人要求</span>。所有夜更上限已設定為 3 人。</p>
                         </div>
                     </div>
                     
-                    <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-purple-100 shadow-sm">
+                    <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border border-purple-100 shadow-sm">
+                        <button 
+                           onClick={exportToExcel} 
+                           disabled={processing || !scheduleData}
+                           className="flex items-center gap-1.5 px-4 py-2 rounded-md font-bold text-sm transition-all bg-blue-500 hover:bg-blue-600 text-white shadow"
+                        >
+                           <Download size={16} /> 匯出 Excel
+                        </button>
                         <button 
                            onClick={() => toggleScheduleLock(true)} 
                            disabled={isScheduleLocked || processing}
@@ -570,7 +608,6 @@ export default function App() {
 
         {/* 互動式更表 Grid */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 overflow-x-auto">
-          {/* 在手機端可以左右滑動，確保排版不會擠在一堆 */}
           <div className="min-w-[1000px]">
             {[0, 1].map(weekIndex => (
               <div key={`week-${weekIndex}`} className="mb-10 last:mb-0">
@@ -585,7 +622,6 @@ export default function App() {
                     return (
                       <div key={`day-${dayIndex}`} className="flex flex-col gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100">
                         <div className="text-center font-bold text-slate-800 bg-white border border-slate-200 shadow-sm py-2 rounded-lg text-sm tracking-wider">
-                          {/* 顯示真實日期，如：7月6日 (一) */}
                           {getDisplayDate(dayIndex)}
                         </div>
                         
