@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Calendar, Users, AlertCircle, CheckCircle, 
-  Clock, ShieldAlert, UserCheck, Coffee, Sun, Moon, Link, Lock, Unlock, Download 
+  Clock, ShieldAlert, UserCheck, Coffee, Sun, Moon, Link, Lock, Unlock, Download, Sparkles, X, Plane 
 } from 'lucide-react';
 
 // ==========================================
@@ -38,13 +38,13 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ⚠️ 智能環境切換：在預覽畫面使用系統動態 ID 防止權限錯誤；在 Vercel 真正上線時則自動鎖定為 'default-shift-app' 以讀取真實數據
+// 智能環境切換
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-shift-app';
 
 // ==========================================
 // 🔧 系統核心設定 (每次開新更表只需修改這裡！)
 // ==========================================
-const SCHEDULE_START_DATE = '2026-08-31'; // 格式: YYYY-MM-DD
+const SCHEDULE_START_DATE = '2026-09-14'; // 👈👈👈 修改日期就在這裡！！
 const PERIOD_ID = `period_${SCHEDULE_START_DATE}`; 
 
 const EMPLOYEES = [
@@ -60,9 +60,10 @@ const EMPLOYEES = [
   { id: 'emp_10', name: 'LHF' }
 ];
 
+// 生成 14 天空白更表結構 (加入 AL)
 const generateEmptySchedule = () => {
   return Array.from({ length: 14 }, (_, i) => ({
-    dayId: i + 1, AM: [], PM: [], OFF: []
+    dayId: i + 1, AM: [], PM: [], OFF: [], AL: []
   }));
 };
 
@@ -75,13 +76,16 @@ export default function App() {
   const [scheduleData, setScheduleData] = useState(null);
   const [isScheduleLocked, setIsScheduleLocked] = useState(false); 
   const [loading, setLoading] = useState(true);
-  const [dbError, setDbError] = useState(null); // ★ 新增：資料庫錯誤狀態
+  const [dbError, setDbError] = useState(null); 
   
   const [currentUser, setCurrentUser] = useState(validEmp ? validEmp.id : EMPLOYEES[0].id); 
   const [isLockedIdentity] = useState(!!validEmp); 
   const [viewMode, setViewMode] = useState(validEmp ? 'employee' : 'supervisor'); 
   const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
   const [processing, setProcessing] = useState(false); 
+
+  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+  const [aiReport, setAiReport] = useState(null);
 
   // ==========================================
   // 2. 身份驗證與資料訂閱
@@ -124,12 +128,11 @@ export default function App() {
           setScheduleData(emptySchedule);
           setDoc(scheduleRef, { days: emptySchedule, isLocked: false });
         }
-        setDbError(null); // 成功讀取，清除錯誤
+        setDbError(null); 
         setLoading(false);
       },
       (error) => {
         console.error("Firestore Subscribe Error:", error);
-        // ★ 攔截權限錯誤並顯示畫面，避免白屏
         if (error.code === 'permission-denied') {
             setDbError("Firebase 權限不足或過期 (Permission Denied)。請主管登入 Firebase Console 更新 Firestore Rules。");
         } else {
@@ -150,22 +153,21 @@ export default function App() {
     setTimeout(() => setToast({ show: false, msg: '', type: 'info' }), 3000);
   };
 
-  // 動態獲取每更的容量上限 (所有夜更只限 3 人)
   const getShiftCapacity = (dayIndex, shiftType) => {
-    if (shiftType === 'PM') {
-      return 3; 
-    }
-    return 4; 
+    if (shiftType === 'AL') return 1; // AL 限制 1 人
+    if (shiftType === 'OFF') return 3; // OFF 由 4 人改為限制 3 人
+    if (shiftType === 'PM') return 3;  // PM 限制 3 人
+    return 4; // AM 限制 4 人
   };
 
-  // 計算當前員工的統計數據
   const workerStats = useMemo(() => {
     if (!scheduleData || !Array.isArray(scheduleData)) return { workDays: 0, offDays: 0 };
     let workDays = 0;
     let offDays = 0;
     scheduleData.forEach(day => {
-      if (day.AM.includes(currentUser) || day.PM.includes(currentUser)) workDays++;
-      if (day.OFF.includes(currentUser)) offDays++;
+      // 兼容舊數據，加上 ?. 防呆
+      if (day.AM?.includes(currentUser) || day.PM?.includes(currentUser)) workDays++;
+      if (day.OFF?.includes(currentUser) || day.AL?.includes(currentUser)) offDays++;
     });
     return { workDays, offDays };
   }, [scheduleData, currentUser]);
@@ -213,10 +215,20 @@ export default function App() {
 
         const days = data.days;
         const currentDay = days[dayIndex];
-        const isMe = currentDay[shiftType].includes(currentUser);
+        
+        // 兼容舊數據沒有 AL 的情況
+        const shiftDataArray = currentDay[shiftType] || [];
+        const isMe = shiftDataArray.includes(currentUser);
         const maxCapacity = getShiftCapacity(dayIndex, shiftType);
 
-        let newDay = { ...currentDay, AM: [...currentDay.AM], PM: [...currentDay.PM], OFF: [...currentDay.OFF] };
+        // 建立新的一天物件，同時確保舊數據擁有所有陣列，避免 Crash
+        let newDay = { 
+            ...currentDay, 
+            AM: [...(currentDay.AM || [])], 
+            PM: [...(currentDay.PM || [])], 
+            OFF: [...(currentDay.OFF || [])],
+            AL: [...(currentDay.AL || [])]
+        };
 
         if (isMe) {
           newDay[shiftType] = newDay[shiftType].filter(id => id !== currentUser);
@@ -229,16 +241,18 @@ export default function App() {
           if (isWorkingShift) {
             let workingCount = 0;
             days.forEach((d, idx) => {
-              if (idx !== dayIndex && (d.AM.includes(currentUser) || d.PM.includes(currentUser))) {
+              if (idx !== dayIndex && (d.AM?.includes(currentUser) || d.PM?.includes(currentUser))) {
                 workingCount++;
               }
             });
-            if (workingCount >= 10) throw new Error("你已經選滿 10 天工作日！請選擇放假 (OFF)。");
+            if (workingCount >= 10) throw new Error("你已經選滿 10 天工作日！請選擇放假 (OFF / AL)。");
           }
 
+          // 互斥邏輯：選了其中一個，自動清空同日的其他選擇
           newDay.AM = newDay.AM.filter(id => id !== currentUser);
           newDay.PM = newDay.PM.filter(id => id !== currentUser);
           newDay.OFF = newDay.OFF.filter(id => id !== currentUser);
+          newDay.AL = newDay.AL.filter(id => id !== currentUser);
 
           newDay[shiftType].push(currentUser);
         }
@@ -291,19 +305,19 @@ export default function App() {
     return `${date.getMonth() + 1}月${date.getDate()}日 (${weekdays[date.getDay()]})`;
   };
 
-  // ★ 匯出 Excel (CSV) 功能
   const exportToExcel = () => {
     if (!scheduleData) return;
 
-    let csvContent = "\uFEFF"; // 加入 BOM 確保 Excel 能正確顯示中文
-    csvContent += "日期,早更 (AM),夜更 (PM),放假 (OFF)\n";
+    let csvContent = "\uFEFF"; 
+    csvContent += "日期,早更 (AM),夜更 (PM),放假 (OFF),年假 (AL)\n";
 
     scheduleData.forEach((dayData, index) => {
       const dateStr = getDisplayDate(index);
-      const amNames = dayData.AM.map(getEmpName).join(" / ");
-      const pmNames = dayData.PM.map(getEmpName).join(" / ");
-      const offNames = dayData.OFF.map(getEmpName).join(" / ");
-      csvContent += `"${dateStr}","${amNames}","${pmNames}","${offNames}"\n`;
+      const amNames = (dayData.AM || []).map(getEmpName).join(" / ");
+      const pmNames = (dayData.PM || []).map(getEmpName).join(" / ");
+      const offNames = (dayData.OFF || []).map(getEmpName).join(" / ");
+      const alNames = (dayData.AL || []).map(getEmpName).join(" / ");
+      csvContent += `"${dateStr}","${amNames}","${pmNames}","${offNames}","${alNames}"\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -318,6 +332,69 @@ export default function App() {
     showToast("已成功下載更表檔案", "success");
   };
 
+  const analyzeScheduleWithAI = async () => {
+    if (!scheduleData) return;
+    setIsAiAnalyzing(true);
+    setAiReport(null);
+    
+    const apiKey = ""; // 運行環境會自動提供 API 密鑰
+    const model = "gemini-2.5-flash-preview-09-2025";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    let promptData = `請分析以下這份 ${SCHEDULE_START_DATE} 開始的 14 天員工排更表：\n\n`;
+    scheduleData.forEach((day, index) => {
+      const dateStr = getDisplayDate(index);
+      const amNames = (day.AM || []).map(getEmpName).join(', ') || '無';
+      const pmNames = (day.PM || []).map(getEmpName).join(', ') || '無';
+      const offNames = (day.OFF || []).map(getEmpName).join(', ') || '無';
+      const alNames = (day.AL || []).map(getEmpName).join(', ') || '無';
+      promptData += `- ${dateStr}: 早更[${amNames}], 夜更[${pmNames}], 放假[${offNames}], 年假[${alNames}]\n`;
+    });
+
+    const systemInstruction = `
+      你是一個專業的香港人力資源顧問。你的任務是分析提供的 14 天排更表，並給出具建設性的建議。
+      請以流暢的繁體中文回答，並使用排版（如 bullet points 和 bold text）。
+      請涵蓋以下 3 個範疇：
+      1. 整體人力分佈評估 (例如：每日早夜更是否充足，有沒有特別短缺的日子)。
+      2. 員工工作量公平性分析 (例如：是否有人連續工作太多天，或者週末放假不平均)。
+      3. 具體改善建議 (提供 1-2 項實際建議給主管調整更表)。
+    `;
+
+    const payload = {
+      contents: [{ parts: [{ text: promptData }] }],
+      systemInstruction: { parts: [{ text: systemInstruction }] }
+    };
+
+    const fetchWithRetry = async (url, options, retries = 5) => {
+      const delays = [1000, 2000, 4000, 8000, 16000];
+      for (let i = 0; i < retries; i++) {
+        try {
+          const response = await fetch(url, options);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return await response.json();
+        } catch (err) {
+          if (i === retries - 1) throw err;
+          await new Promise(res => setTimeout(res, delays[i]));
+        }
+      }
+    };
+
+    try {
+      const data = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "抱歉，無法生成分析報告。";
+      setAiReport(text);
+    } catch (error) {
+      console.error("AI Analysis Error:", error);
+      showToast("AI 分析失敗，請稍後再試", "error");
+    } finally {
+      setIsAiAnalyzing(false);
+    }
+  };
+
   // ==========================================
   // 4. UI 渲染組件
   // ==========================================
@@ -325,10 +402,11 @@ export default function App() {
     const dayData = scheduleData[dayIndex];
     if (!dayData) return null;
 
-    const shiftData = dayData[shiftType];
+    // ★ 舊數據防呆：如果舊數據沒有 AL，預設給它一個空陣列
+    const shiftData = dayData[shiftType] || [];
     const maxCapacity = getShiftCapacity(dayIndex, shiftType);
     const isFull = shiftData.length >= maxCapacity;
-    const isShort = shiftType !== 'OFF' && shiftData.length < 3; 
+    const isShort = (shiftType !== 'OFF' && shiftType !== 'AL') && shiftData.length < 3; 
     const isMe = shiftData.includes(currentUser);
     const IconComponent = config.icon;
 
@@ -390,7 +468,11 @@ export default function App() {
     );
   };
 
-  // ★ 錯誤攔截 UI：如果資料庫連線失敗，顯示紅色警告畫面
+  const renderBasicHtml = (text) => {
+    const htmlText = text.replace(/\*\*(.*?)\*\*/g, '<strong class="text-slate-800">$1</strong>').replace(/\n/g, '<br/>');
+    return { __html: htmlText };
+  };
+
   if (dbError) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
@@ -430,12 +512,31 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans relative">
+    <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans relative pb-10">
       
+      {/* Toast */}
       {toast.show && (
         <div className={`fixed top-6 right-6 z-50 p-4 rounded-lg shadow-lg text-white font-medium flex items-center gap-2 transform transition-all duration-300 translate-y-0 ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
           {toast.type === 'error' ? <ShieldAlert size={20}/> : <CheckCircle size={20}/>}
           {toast.msg}
+        </div>
+      )}
+
+      {/* AI 分析報告 Modal */}
+      {aiReport && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 flex justify-between items-center text-white">
+              <h3 className="font-bold flex items-center gap-2 text-lg"><Sparkles size={20} className="text-purple-200" /> AI 智能更表分析報告</h3>
+              <button onClick={() => setAiReport(null)} className="hover:bg-white/20 p-1.5 rounded-full transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 overflow-y-auto custom-scrollbar text-slate-700 leading-relaxed text-sm">
+               <div dangerouslySetInnerHTML={renderBasicHtml(aiReport)} />
+            </div>
+            <div className="bg-slate-50 border-t border-slate-100 p-4 flex justify-end">
+              <button onClick={() => setAiReport(null)} className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-bold transition-colors">關閉報告</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -538,7 +639,7 @@ export default function App() {
                           <Coffee size={28} />
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-slate-500 mb-1">已選放假 OFF (目標: 4日)</p>
+                          <p className="text-sm font-semibold text-slate-500 mb-1">已選放假 (OFF/AL) (目標: 4日)</p>
                           <p className="text-2xl font-bold text-slate-800">
                             {workerStats.offDays} <span className="text-base font-medium text-slate-400">/ 4</span>
                           </p>
@@ -560,6 +661,22 @@ export default function App() {
                     </div>
                     
                     <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border border-purple-100 shadow-sm">
+                        <button 
+                           onClick={analyzeScheduleWithAI} 
+                           disabled={isAiAnalyzing || !scheduleData}
+                           className="flex items-center gap-1.5 px-4 py-2 rounded-md font-bold text-sm transition-all bg-purple-600 hover:bg-purple-700 text-white shadow relative overflow-hidden"
+                        >
+                           {isAiAnalyzing ? (
+                             <>
+                               <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                               <Sparkles size={16} className="animate-spin" /> 分析中...
+                             </>
+                           ) : (
+                             <>
+                               <Sparkles size={16} /> ✨ AI 分析
+                             </>
+                           )}
+                        </button>
                         <button 
                            onClick={exportToExcel} 
                            disabled={processing || !scheduleData}
@@ -621,7 +738,7 @@ export default function App() {
                     const dayIndex = (weekIndex * 7) + dayOffset;
                     return (
                       <div key={`day-${dayIndex}`} className="flex flex-col gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100">
-                        <div className="text-center font-bold text-slate-800 bg-white border border-slate-200 shadow-sm py-2 rounded-lg text-sm tracking-wider">
+                        <div className="text-center font-bold text-slate-800 bg-white border border-slate-200 shadow-sm py-2 rounded-lg text-sm tracking-wider mb-1">
                           {getDisplayDate(dayIndex)}
                         </div>
                         
@@ -641,13 +758,24 @@ export default function App() {
                           hoverColor: 'hover:border-indigo-400 hover:bg-indigo-50'
                         })}
 
-                        {renderShiftButton(dayIndex, 'OFF', {
-                          label: '放假 (OFF)',
-                          icon: Coffee, 
-                          iconColor: 'text-emerald-500',
-                          activeColor: 'bg-emerald-500 border-emerald-500 text-white',
-                          hoverColor: 'hover:border-emerald-400 hover:bg-emerald-50'
-                        })}
+                        {/* ★ 新增：AL 與 OFF 放在同一個小容器內，節省空間並排 */}
+                        <div className="grid grid-cols-2 gap-2 mt-1">
+                          {renderShiftButton(dayIndex, 'OFF', {
+                            label: '放假 (OFF)',
+                            icon: Coffee, 
+                            iconColor: 'text-emerald-500',
+                            activeColor: 'bg-emerald-500 border-emerald-500 text-white',
+                            hoverColor: 'hover:border-emerald-400 hover:bg-emerald-50'
+                          })}
+
+                          {renderShiftButton(dayIndex, 'AL', {
+                            label: '年假 (AL)',
+                            icon: Plane, 
+                            iconColor: 'text-pink-500',
+                            activeColor: 'bg-pink-500 border-pink-500 text-white',
+                            hoverColor: 'hover:border-pink-400 hover:bg-pink-50'
+                          })}
+                        </div>
                       </div>
                     );
                   })}
