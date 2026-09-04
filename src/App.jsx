@@ -338,6 +338,11 @@ export default function App() {
     setAiReport(null);
     
     const apiKey = "AIzaSyClUWm3bnrZm8zIye0iumFEsC_VMAIel7k"; // 運行環境會自動提供 API 密鑰
+    if (!apiKey) {
+      setIsAiAnalyzing(false);
+      showToast("系統未配置 Gemini API Key，請主管於程式碼中設定。", "error");
+      return;
+    }
     const model = "gemini-2.5-flash-preview-09-2025";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
