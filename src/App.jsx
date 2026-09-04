@@ -758,24 +758,22 @@ export default function App() {
                           hoverColor: 'hover:border-indigo-400 hover:bg-indigo-50'
                         })}
 
-                        {/* ★ 新增：AL 與 OFF 放在同一個小容器內，節省空間並排 */}
-                        <div className="grid grid-cols-2 gap-2 mt-1">
-                          {renderShiftButton(dayIndex, 'OFF', {
-                            label: '放假 (OFF)',
-                            icon: Coffee, 
-                            iconColor: 'text-emerald-500',
-                            activeColor: 'bg-emerald-500 border-emerald-500 text-white',
-                            hoverColor: 'hover:border-emerald-400 hover:bg-emerald-50'
-                          })}
+                        {/* ★ 修改：移除並排 grid，讓 OFF 與 AL 獨立上下排列防誤觸 */}
+                        {renderShiftButton(dayIndex, 'OFF', {
+                          label: '放假 (OFF)',
+                          icon: Coffee, 
+                          iconColor: 'text-emerald-500',
+                          activeColor: 'bg-emerald-500 border-emerald-500 text-white',
+                          hoverColor: 'hover:border-emerald-400 hover:bg-emerald-50'
+                        })}
 
-                          {renderShiftButton(dayIndex, 'AL', {
-                            label: '年假 (AL)',
-                            icon: Plane, 
-                            iconColor: 'text-pink-500',
-                            activeColor: 'bg-pink-500 border-pink-500 text-white',
-                            hoverColor: 'hover:border-pink-400 hover:bg-pink-50'
-                          })}
-                        </div>
+                        {renderShiftButton(dayIndex, 'AL', {
+                          label: '年假 (AL)',
+                          icon: Plane, 
+                          iconColor: 'text-pink-500',
+                          activeColor: 'bg-pink-500 border-pink-500 text-white',
+                          hoverColor: 'hover:border-pink-400 hover:bg-pink-50'
+                        })}
                       </div>
                     );
                   })}
