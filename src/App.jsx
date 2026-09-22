@@ -44,7 +44,7 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-shift-app';
 // ==========================================
 // 🔧 系統核心設定 (每次開新更表只需修改這裡！)
 // ==========================================
-const SCHEDULE_START_DATE = '2026-09-14'; // 👈👈👈 修改日期就在這裡！！
+const SCHEDULE_START_DATE = '2026-09-28'; // 👈👈👈 修改日期就在這裡！！
 const PERIOD_ID = `period_${SCHEDULE_START_DATE}`; 
 
 const EMPLOYEES = [
