@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Calendar, Users, AlertCircle, CheckCircle, 
-  Clock, ShieldAlert, UserCheck, Coffee, Sun, Moon, Link, Lock, Unlock, Download, Sparkles, X, Plane 
+  Clock, ShieldAlert, UserCheck, Coffee, Sun, Moon, Link, Lock, Unlock, Download, Plane 
 } from 'lucide-react';
 
 // ==========================================
@@ -44,7 +44,8 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-shift-app';
 // ==========================================
 // 🔧 系統核心設定 (每次開新更表只需修改這裡！)
 // ==========================================
-const SCHEDULE_START_DATE = '2026-10-26'; // 👈👈👈 修改日期就在這裡！！
+const SCHEDULE_START_DATE = '2026-11-09'; // 👈👈👈 修改日期就在這裡！！
+const SUPERVISOR_PASSWORD = '23396465'; // 👈👈👈 主管登入密碼設定在這裡（可自行修改）！！
 const PERIOD_ID = `period_${SCHEDULE_START_DATE}`; 
 
 const EMPLOYEES = [
@@ -60,9 +61,9 @@ const EMPLOYEES = [
   { id: 'emp_10', name: 'LHF' }
 ];
 
-// 生成 14 天空白更表結構 (加入 AL)
+// 生成 21 天 (3星期) 空白更表結構 (加入 AL)
 const generateEmptySchedule = () => {
-  return Array.from({ length: 14 }, (_, i) => ({
+  return Array.from({ length: 21 }, (_, i) => ({
     dayId: i + 1, AM: [], PM: [], OFF: [], AL: []
   }));
 };
@@ -84,8 +85,10 @@ export default function App() {
   const [toast, setToast] = useState({ show: false, msg: '', type: 'info' });
   const [processing, setProcessing] = useState(false); 
 
-  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
-  const [aiReport, setAiReport] = useState(null);
+  // ★ 主管密碼驗證狀態
+  const [isSupervisorAuth, setIsSupervisorAuth] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   // ==========================================
   // 2. 身份驗證與資料訂閱
@@ -121,7 +124,15 @@ export default function App() {
       (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
-          setScheduleData(data.days);
+          let loadedDays = data.days || [];
+          // 兼容舊數據：若原本只有 14 天，自動擴展補齊至 21 天（3星期）
+          if (loadedDays.length < 21) {
+            const extraDays = Array.from({ length: 21 - loadedDays.length }, (_, i) => ({
+              dayId: loadedDays.length + i + 1, AM: [], PM: [], OFF: [], AL: []
+            }));
+            loadedDays = [...loadedDays, ...extraDays];
+          }
+          setScheduleData(loadedDays);
           setIsScheduleLocked(!!data.isLocked); 
         } else {
           const emptySchedule = generateEmptySchedule();
@@ -213,7 +224,13 @@ export default function App() {
            throw new Error("更表已由主管鎖定完成，無法修改。");
         }
 
-        const days = data.days;
+        let days = [...(data.days || [])];
+        if (days.length < 21) {
+          const extraDays = Array.from({ length: 21 - days.length }, (_, i) => ({
+            dayId: days.length + i + 1, AM: [], PM: [], OFF: [], AL: []
+          }));
+          days = [...days, ...extraDays];
+        }
         const currentDay = days[dayIndex];
         
         // 兼容舊數據沒有 AL 的情況
@@ -245,7 +262,7 @@ export default function App() {
                 workingCount++;
               }
             });
-            if (workingCount >= 10) throw new Error("你已經選滿 10 天工作日！請選擇放假 (OFF / AL)。");
+            if (workingCount >= 15) throw new Error("你已經選滿 15 天工作日！請選擇放假 (OFF / AL)。");
           }
 
           // 互斥邏輯：選了其中一個，自動清空同日的其他選擇
@@ -332,74 +349,6 @@ export default function App() {
     showToast("已成功下載更表檔案", "success");
   };
 
-  const analyzeScheduleWithAI = async () => {
-    if (!scheduleData) return;
-    setIsAiAnalyzing(true);
-    setAiReport(null);
-    
-    const apiKey = "AIzaSyClUWm3bnrZm8zIye0iumFEsC_VMAIel7k"; // 運行環境會自動提供 API 密鑰
-    if (!apiKey) {
-      setIsAiAnalyzing(false);
-      showToast("系統未配置 Gemini API Key，請主管於程式碼中設定。", "error");
-      return;
-    }
-    const model = "gemini-2.5-flash-preview-09-2025";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-    let promptData = `請分析以下這份 ${SCHEDULE_START_DATE} 開始的 14 天員工排更表：\n\n`;
-    scheduleData.forEach((day, index) => {
-      const dateStr = getDisplayDate(index);
-      const amNames = (day.AM || []).map(getEmpName).join(', ') || '無';
-      const pmNames = (day.PM || []).map(getEmpName).join(', ') || '無';
-      const offNames = (day.OFF || []).map(getEmpName).join(', ') || '無';
-      const alNames = (day.AL || []).map(getEmpName).join(', ') || '無';
-      promptData += `- ${dateStr}: 早更[${amNames}], 夜更[${pmNames}], 放假[${offNames}], 年假[${alNames}]\n`;
-    });
-
-    const systemInstruction = `
-      你是一個專業的香港人力資源顧問。你的任務是分析提供的 14 天排更表，並給出具建設性的建議。
-      請以流暢的繁體中文回答，並使用排版（如 bullet points 和 bold text）。
-      請涵蓋以下 3 個範疇：
-      1. 整體人力分佈評估 (例如：每日早夜更是否充足，有沒有特別短缺的日子)。
-      2. 員工工作量公平性分析 (例如：是否有人連續工作太多天，或者週末放假不平均)。
-      3. 具體改善建議 (提供 1-2 項實際建議給主管調整更表)。
-    `;
-
-    const payload = {
-      contents: [{ parts: [{ text: promptData }] }],
-      systemInstruction: { parts: [{ text: systemInstruction }] }
-    };
-
-    const fetchWithRetry = async (url, options, retries = 5) => {
-      const delays = [1000, 2000, 4000, 8000, 16000];
-      for (let i = 0; i < retries; i++) {
-        try {
-          const response = await fetch(url, options);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          return await response.json();
-        } catch (err) {
-          if (i === retries - 1) throw err;
-          await new Promise(res => setTimeout(res, delays[i]));
-        }
-      }
-    };
-
-    try {
-      const data = await fetchWithRetry(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "抱歉，無法生成分析報告。";
-      setAiReport(text);
-    } catch (error) {
-      console.error("AI Analysis Error:", error);
-      showToast("AI 分析失敗，請稍後再試", "error");
-    } finally {
-      setIsAiAnalyzing(false);
-    }
-  };
-
   // ==========================================
   // 4. UI 渲染組件
   // ==========================================
@@ -473,11 +422,6 @@ export default function App() {
     );
   };
 
-  const renderBasicHtml = (text) => {
-    const htmlText = text.replace(/\*\*(.*?)\*\*/g, '<strong class="text-slate-800">$1</strong>').replace(/\n/g, '<br/>');
-    return { __html: htmlText };
-  };
-
   if (dbError) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
@@ -516,6 +460,69 @@ export default function App() {
     );
   }
 
+  // ★ 新增：防破解安全閘門（若無專屬員工連結、或同事刪除了網址尾部的 ?uid=，強制攔截並要求輸入主管密碼）
+  if (!isLockedIdentity && !isSupervisorAuth) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4 font-sans">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-200 max-w-md w-full">
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="bg-purple-100 p-4 rounded-full text-purple-600 mb-4 shadow-sm">
+              <Lock size={36} />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-800">主管專屬控制台</h2>
+            <p className="text-slate-500 text-sm mt-2">
+              此頁面受密碼保護。請輸入主管密碼以進入全局檢視及管理模式。
+            </p>
+          </div>
+
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (passwordInput === SUPERVISOR_PASSWORD) {
+                setIsSupervisorAuth(true);
+                setPasswordError('');
+              } else {
+                setPasswordError('密碼錯誤，請重新輸入！');
+                setPasswordInput('');
+              }
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">主管密碼</label>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="請輸入密碼..."
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all text-slate-800"
+                autoFocus
+              />
+              {passwordError && (
+                <p className="text-red-500 text-xs font-bold mt-2 flex items-center gap-1">
+                  <AlertCircle size={14} /> {passwordError}
+                </p>
+              )}
+            </div>
+            <button
+              type="submit"
+              className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-md transition-all"
+            >
+              解鎖進入系統
+            </button>
+          </form>
+
+          <div className="mt-6 pt-5 border-t border-slate-100 text-center">
+            <p className="text-xs text-slate-400 leading-relaxed">
+              💡 <strong>同事請注意：</strong><br />
+              一般員工無需輸入密碼。請直接點擊主管透過 WhatsApp 發送給你的<strong>「個人專屬連結」</strong>進入選更。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 p-4 md:p-8 font-sans relative pb-10">
       
@@ -524,24 +531,6 @@ export default function App() {
         <div className={`fixed top-6 right-6 z-50 p-4 rounded-lg shadow-lg text-white font-medium flex items-center gap-2 transform transition-all duration-300 translate-y-0 ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
           {toast.type === 'error' ? <ShieldAlert size={20}/> : <CheckCircle size={20}/>}
           {toast.msg}
-        </div>
-      )}
-
-      {/* AI 分析報告 Modal */}
-      {aiReport && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 flex justify-between items-center text-white">
-              <h3 className="font-bold flex items-center gap-2 text-lg"><Sparkles size={20} className="text-purple-200" /> AI 智能更表分析報告</h3>
-              <button onClick={() => setAiReport(null)} className="hover:bg-white/20 p-1.5 rounded-full transition-colors"><X size={20} /></button>
-            </div>
-            <div className="p-6 overflow-y-auto custom-scrollbar text-slate-700 leading-relaxed text-sm">
-               <div dangerouslySetInnerHTML={renderBasicHtml(aiReport)} />
-            </div>
-            <div className="bg-slate-50 border-t border-slate-100 p-4 flex justify-end">
-              <button onClick={() => setAiReport(null)} className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-bold transition-colors">關閉報告</button>
-            </div>
-          </div>
         </div>
       )}
 
@@ -632,21 +621,21 @@ export default function App() {
                           <Clock size={28} />
                         </div>
                         <div className="z-10">
-                          <p className="text-sm font-semibold text-slate-500 mb-1">已選工作天 (目標: 10日)</p>
+                          <p className="text-sm font-semibold text-slate-500 mb-1">已選工作天 (目標: 15日)</p>
                           <p className="text-2xl font-bold text-slate-800">
-                              {workerStats.workDays} <span className="text-base font-medium text-slate-400">/ 10</span>
+                              {workerStats.workDays} <span className="text-base font-medium text-slate-400">/ 15</span>
                           </p>
                         </div>
-                        {workerStats.workDays === 10 && <div className="absolute right-4 text-emerald-500 font-bold bg-emerald-50 px-2 py-1 rounded text-sm">已達標</div>}
+                        {workerStats.workDays === 15 && <div className="absolute right-4 text-emerald-500 font-bold bg-emerald-50 px-2 py-1 rounded text-sm">已達標</div>}
                     </div>
                     <div className="bg-white border-l-4 border-amber-500 shadow-sm rounded-r-xl p-5 flex items-center gap-4">
                         <div className="bg-amber-50 p-3 rounded-full text-amber-600">
                           <Coffee size={28} />
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-slate-500 mb-1">已選放假 (OFF/AL) (目標: 4日)</p>
+                          <p className="text-sm font-semibold text-slate-500 mb-1">已選放假 (OFF/AL) (目標: 6日)</p>
                           <p className="text-2xl font-bold text-slate-800">
-                            {workerStats.offDays} <span className="text-base font-medium text-slate-400">/ 4</span>
+                            {workerStats.offDays} <span className="text-base font-medium text-slate-400">/ 6</span>
                           </p>
                         </div>
                     </div>
@@ -666,22 +655,6 @@ export default function App() {
                     </div>
                     
                     <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border border-purple-100 shadow-sm">
-                        <button 
-                           onClick={analyzeScheduleWithAI} 
-                           disabled={isAiAnalyzing || !scheduleData}
-                           className="flex items-center gap-1.5 px-4 py-2 rounded-md font-bold text-sm transition-all bg-purple-600 hover:bg-purple-700 text-white shadow relative overflow-hidden"
-                        >
-                           {isAiAnalyzing ? (
-                             <>
-                               <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
-                               <Sparkles size={16} className="animate-spin" /> 分析中...
-                             </>
-                           ) : (
-                             <>
-                               <Sparkles size={16} /> ✨ AI 分析
-                             </>
-                           )}
-                        </button>
                         <button 
                            onClick={exportToExcel} 
                            disabled={processing || !scheduleData}
@@ -731,7 +704,7 @@ export default function App() {
         {/* 互動式更表 Grid */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 overflow-x-auto">
           <div className="min-w-[1000px]">
-            {[0, 1].map(weekIndex => (
+            {[0, 1, 2].map(weekIndex => (
               <div key={`week-${weekIndex}`} className="mb-10 last:mb-0">
                 <div className="flex items-center gap-2 mb-4">
                   <h3 className="text-xl font-bold text-slate-800">第 {weekIndex + 1} 週</h3>
